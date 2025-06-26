@@ -1,0 +1,47 @@
+.app {
+  text-align: center;
+  padding: 20px;
+  font-family: Arial, sans-serif;
+}
+
+.join-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 400px;
+  margin: 0 auto;
+}
+
+.join-form input, .join-form button {
+  padding: 10px;
+  font-size: 16px;
+}
+
+.meeting-room {
+  display: flex;
+  gap: 20px;
+  justify-content: center;
+  margin-top: 20px;
+}
+
+.avatar-section {
+  flex: 1;
+  max-width: 500px;
+}
+
+.video-section {
+  flex: 1;
+  max-width: 500px;
+}
+
+canvas {
+  border: 1px solid #ccc;
+  background-color: #f0f0f0;
+}
+
+video {
+  width: 100%;
+  max-width: 300px;
+  height: auto;
+  border: 1px solid #ccc;
+}
