@@ -66,14 +66,25 @@ io.on('connection', (socket) => {
   });
 
   socket.on('get-room-info', (roomId) => {
-    if (rooms.has(roomId) && rooms.get(roomId).has(socket.id)) {
-      const roomSize = rooms.get(roomId).size;
-      socket.emit('room-info', { 
-        roomId, 
-        userCount: roomSize,
-        users: Array.from(rooms.get(roomId))
-      });
-      console.log(`Sent room info to ${socket.id}: ${roomSize} users`);
+    console.log(`Get room info request from ${socket.id} for room ${roomId}`);
+    console.log('Available rooms:', Array.from(rooms.keys()));
+    
+    if (rooms.has(roomId)) {
+      console.log(`Room ${roomId} exists with users:`, Array.from(rooms.get(roomId)));
+      if (rooms.get(roomId).has(socket.id)) {
+        const roomSize = rooms.get(roomId).size;
+        const roomData = { 
+          roomId, 
+          userCount: roomSize,
+          users: Array.from(rooms.get(roomId))
+        };
+        socket.emit('room-info', roomData);
+        console.log(`Sent room info to ${socket.id}:`, roomData);
+      } else {
+        console.log(`User ${socket.id} not found in room ${roomId}`);
+      }
+    } else {
+      console.log(`Room ${roomId} does not exist`);
     }
   });
 

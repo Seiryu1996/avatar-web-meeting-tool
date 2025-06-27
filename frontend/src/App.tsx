@@ -15,6 +15,7 @@ const App: React.FC = () => {
   const [socket, setSocket] = useState<Socket | null>(null);
   const [avatarData, setAvatarData] = useState<AvatarData | null>(null);
   const [roomId, setRoomId] = useState<string>('');
+  const [username, setUsername] = useState<string>('');
   const [joined, setJoined] = useState<boolean>(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -56,7 +57,7 @@ const App: React.FC = () => {
   };
 
   const joinRoom = () => {
-    if (socket && roomId && avatarData) {
+    if (socket && roomId && avatarData && username.trim()) {
       setJoined(true);
     }
   };
@@ -69,6 +70,12 @@ const App: React.FC = () => {
         <div className="join-form">
           <input
             type="text"
+            placeholder="ユーザー名"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+          />
+          <input
+            type="text"
             placeholder="Room ID (半角文字で入力)"
             value={roomId}
             onChange={(e) => setRoomId(e.target.value.trim())}
@@ -79,7 +86,7 @@ const App: React.FC = () => {
             onChange={handleFileUpload}
             ref={fileInputRef}
           />
-          <button onClick={joinRoom} disabled={!roomId || !avatarData}>
+          <button onClick={joinRoom} disabled={!roomId || !avatarData || !username.trim()}>
             Join Meeting
           </button>
         </div>
@@ -89,7 +96,7 @@ const App: React.FC = () => {
             <AvatarCanvas avatarData={avatarData} />
           </div>
           <div className="video-section">
-            <VideoCall socket={socket} roomId={roomId} />
+            <VideoCall socket={socket} roomId={roomId} username={username} />
           </div>
         </div>
       )}

@@ -4,13 +4,20 @@ import { Socket } from 'socket.io-client';
 interface VideoCallProps {
   socket: Socket | null;
   roomId: string;
+  username: string;
 }
 
-const VideoCall: React.FC<VideoCallProps> = ({ socket, roomId }) => {
+interface RemoteUser {
+  id: string;
+  username: string;
+  stream?: MediaStream;
+}
+
+const VideoCall: React.FC<VideoCallProps> = ({ socket, roomId, username }) => {
   const localVideoRef = useRef<HTMLVideoElement>(null);
-  const remoteVideoRef = useRef<HTMLVideoElement>(null);
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
-  const [peerConnection, setPeerConnection] = useState<RTCPeerConnection | null>(null);
+  const [remoteUsers, setRemoteUsers] = useState<RemoteUser[]>([]);
+  const [peerConnections, setPeerConnections] = useState<Map<string, RTCPeerConnection>>(new Map());
   const [connectedUsers, setConnectedUsers] = useState<number>(0);
   const [connectionStatus, setConnectionStatus] = useState<string>('接続中...');
   const [roomJoined, setRoomJoined] = useState<boolean>(false);
@@ -24,6 +31,53 @@ const VideoCall: React.FC<VideoCallProps> = ({ socket, roomId }) => {
 
     console.log('VideoCall useEffect - socket connected:', socket.connected);
     console.log('VideoCall useEffect - roomId:', roomId);
+
+    // ソケットイベントリスナーを先に設定（カメラエラーに関係なく）
+    socket.on('room-info', (info) => {
+      console.log('Room info received:', info, 'userCount:', info.userCount);
+      console.log('My socket ID:', socket.id);
+      console.log('All users in room:', info.users);
+      
+      setConnectedUsers(info.userCount - 1);
+      setConnectionStatus(`ルームに参加中`);
+      console.log('Setting connectedUsers to:', info.userCount - 1);
+      
+      // 他のユーザーをリモートユーザーとして追加
+      if (info.users && Array.isArray(info.users)) {
+        const otherUsers = info.users.filter((userId: string) => userId !== socket.id);
+        console.log('Other users:', otherUsers);
+        setRemoteUsers(prev => {
+          const newUsers = otherUsers.map((userId: string) => ({
+            id: userId,
+            username: `ユーザー${userId.slice(-4)}`
+          }));
+          console.log('Setting remote users:', newUsers);
+          return newUsers;
+        });
+      }
+    });
+
+    socket.on('user-joined', async (userId) => {
+      console.log('User joined:', userId);
+      setConnectionStatus('他のユーザーが参加しました');
+      
+      // 新しいリモートユーザーを追加
+      setRemoteUsers(prev => {
+        const existing = prev.find(u => u.id === userId);
+        if (!existing) {
+          return [...prev, { id: userId, username: `ユーザー${userId.slice(-4)}` }];
+        }
+        return prev;
+      });
+    });
+
+    socket.on('user-left', (userId) => {
+      console.log('User left:', userId);
+      setConnectionStatus('ユーザーが退出しました');
+      
+      // リモートユーザーを削除
+      setRemoteUsers(prev => prev.filter(u => u.id !== userId));
+    });
 
     const initWebRTC = async () => {
       try {
@@ -46,9 +100,16 @@ const VideoCall: React.FC<VideoCallProps> = ({ socket, roomId }) => {
         });
 
         pc.ontrack = (event) => {
-          if (remoteVideoRef.current) {
-            remoteVideoRef.current.srcObject = event.streams[0];
-          }
+          const remoteStream = event.streams[0];
+          // リモートユーザーのストリームを追加
+          setRemoteUsers(prev => {
+            const existing = prev.find(u => u.id === 'temp-remote');
+            if (existing) {
+              return prev.map(u => u.id === 'temp-remote' ? {...u, stream: remoteStream} : u);
+            } else {
+              return [...prev, { id: 'temp-remote', username: '相手', stream: remoteStream }];
+            }
+          });
         };
 
         pc.onicecandidate = (event) => {
@@ -60,7 +121,7 @@ const VideoCall: React.FC<VideoCallProps> = ({ socket, roomId }) => {
           }
         };
 
-        setPeerConnection(pc);
+        setPeerConnections(prev => new Map(prev.set('default', pc)));
 
         socket.on('offer', async (offer) => {
           try {
@@ -91,16 +152,9 @@ const VideoCall: React.FC<VideoCallProps> = ({ socket, roomId }) => {
           await pc.addIceCandidate(candidate);
         });
 
+        // user-joinedでのOffer送信
         socket.on('user-joined', async (userId) => {
-          console.log('User joined:', userId);
-          setConnectedUsers(1); // 自分以外の接続ユーザー数を1に設定
-          setConnectionStatus('他のユーザーが参加しました');
-          
-          // 強制的にユーザー数を2に更新（緊急対処）
-          setTimeout(() => {
-            console.log('Force updating user count to 2');
-            setConnectedUsers(1); // +1されて2になる
-          }, 1000);
+          console.log('WebRTC: User joined for offer:', userId);
           
           // 重複offer防止
           if (!isOffering && pc.signalingState === 'stable') {
@@ -116,19 +170,6 @@ const VideoCall: React.FC<VideoCallProps> = ({ socket, roomId }) => {
               setIsOffering(false);
             }
           }
-        });
-
-        socket.on('user-left', (userId) => {
-          console.log('User left:', userId);
-          setConnectedUsers(0); // 自分だけに戻る
-          setConnectionStatus('ユーザーが退出しました');
-        });
-
-        socket.on('room-info', (info) => {
-          console.log('Room info received:', info, 'userCount:', info.userCount);
-          setConnectedUsers(info.userCount - 1); // 合計人数から1引いて表示では+1するので結果的に合計人数が表示される
-          setConnectionStatus(`ルームに参加中`);
-          console.log('Setting connectedUsers to:', info.userCount - 1);
         });
 
       } catch (error) {
@@ -150,10 +191,10 @@ const VideoCall: React.FC<VideoCallProps> = ({ socket, roomId }) => {
         console.log('Requesting room info as fallback');
         socket.emit('get-room-info', roomId);
         
-        // さらに強制的にユーザー数を2に設定（最終手段）
+        // フォールバック用にルーム情報を要求後、正確な人数を設定
         setTimeout(() => {
-          console.log('Final fallback: setting user count to 2');
-          setConnectedUsers(1); // 表示では+1されて2になる
+          console.log('Fallback: requesting accurate user count');
+          socket.emit('get-room-info', roomId);
         }, 2000);
       }, 3000);
     }
@@ -171,9 +212,7 @@ const VideoCall: React.FC<VideoCallProps> = ({ socket, roomId }) => {
       if (localStream) {
         localStream.getTracks().forEach(track => track.stop());
       }
-      if (peerConnection) {
-        peerConnection.close();
-      }
+      peerConnections.forEach(pc => pc.close());
       socket.off('user-joined');
       socket.off('user-left');
       socket.off('room-info');
@@ -191,9 +230,9 @@ const VideoCall: React.FC<VideoCallProps> = ({ socket, roomId }) => {
         <p>接続中のユーザー: {connectedUsers + 1}人</p>
         <p>ルームID: {roomId}</p>
       </div>
-      <div style={{ display: 'flex', gap: '10px' }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
         <div>
-          <p>あなた</p>
+          <p>{username}（あなた）</p>
           <video
             ref={localVideoRef}
             autoPlay
@@ -203,16 +242,24 @@ const VideoCall: React.FC<VideoCallProps> = ({ socket, roomId }) => {
             style={{ border: '1px solid #ccc' }}
           />
         </div>
-        <div>
-          <p>相手</p>
-          <video
-            ref={remoteVideoRef}
-            autoPlay
-            width="200"
-            height="150"
-            style={{ border: '1px solid #ccc' }}
-          />
-        </div>
+        {remoteUsers.map((user) => (
+          <div key={user.id}>
+            <p>{user.username || `ユーザー${user.id.slice(-4)}`}</p>
+            <video
+              autoPlay
+              width="200"
+              height="150"
+              style={{ border: '1px solid #ccc', backgroundColor: '#f0f0f0' }}
+              ref={(el) => {
+                if (el && user.stream) {
+                  el.srcObject = user.stream;
+                } else if (el) {
+                  el.srcObject = null;
+                }
+              }}
+            />
+          </div>
+        ))}
       </div>
     </div>
   );
