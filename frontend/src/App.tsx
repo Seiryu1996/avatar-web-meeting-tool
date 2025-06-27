@@ -19,7 +19,19 @@ const App: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    const newSocket = io(process.env.REACT_APP_BACKEND_URL || 'http://localhost:3001');
+    const backendUrl = process.env.REACT_APP_BACKEND_URL || 'http://localhost:3001';
+    console.log('Connecting to backend:', backendUrl);
+    
+    const newSocket = io(backendUrl);
+    
+    newSocket.on('connect', () => {
+      console.log('App: Socket connected with ID:', newSocket.id);
+    });
+    
+    newSocket.on('disconnect', () => {
+      console.log('App: Socket disconnected');
+    });
+    
     setSocket(newSocket);
 
     return () => {
@@ -44,8 +56,7 @@ const App: React.FC = () => {
   };
 
   const joinRoom = () => {
-    if (socket && roomId) {
-      socket.emit('join-room', roomId);
+    if (socket && roomId && avatarData) {
       setJoined(true);
     }
   };
@@ -58,9 +69,9 @@ const App: React.FC = () => {
         <div className="join-form">
           <input
             type="text"
-            placeholder="Room ID"
+            placeholder="Room ID (半角文字で入力)"
             value={roomId}
-            onChange={(e) => setRoomId(e.target.value)}
+            onChange={(e) => setRoomId(e.target.value.trim())}
           />
           <input
             type="file"

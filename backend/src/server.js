@@ -25,15 +25,32 @@ io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
 
   socket.on('join-room', (roomId) => {
-    socket.join(roomId);
-    
+    // 既に参加済みの場合は処理をスキップ
     if (!rooms.has(roomId)) {
       rooms.set(roomId, new Set());
     }
+    
+    if (rooms.get(roomId).has(socket.id)) {
+      console.log(`User ${socket.id} already in room ${roomId}`);
+      return;
+    }
+    
+    socket.join(roomId);
     rooms.get(roomId).add(socket.id);
     
+    const roomSize = rooms.get(roomId).size;
+    
+    // 既存ユーザーに新しいユーザーの参加を通知
     socket.to(roomId).emit('user-joined', socket.id);
-    console.log(`User ${socket.id} joined room ${roomId}`);
+    
+    // ルーム内の全ユーザーに最新のルーム情報を送信
+    io.to(roomId).emit('room-info', { 
+      roomId, 
+      userCount: roomSize,
+      users: Array.from(rooms.get(roomId))
+    });
+    
+    console.log(`User ${socket.id} joined room ${roomId}, total users: ${roomSize}`);
   });
 
   socket.on('offer', (data) => {
@@ -46,6 +63,18 @@ io.on('connection', (socket) => {
 
   socket.on('ice-candidate', (data) => {
     socket.to(data.roomId).emit('ice-candidate', data.candidate);
+  });
+
+  socket.on('get-room-info', (roomId) => {
+    if (rooms.has(roomId) && rooms.get(roomId).has(socket.id)) {
+      const roomSize = rooms.get(roomId).size;
+      socket.emit('room-info', { 
+        roomId, 
+        userCount: roomSize,
+        users: Array.from(rooms.get(roomId))
+      });
+      console.log(`Sent room info to ${socket.id}: ${roomSize} users`);
+    }
   });
 
   socket.on('avatar-update', (data) => {
@@ -63,7 +92,14 @@ io.on('connection', (socket) => {
         users.delete(socket.id);
         socket.to(roomId).emit('user-left', socket.id);
         
-        if (users.size === 0) {
+        // 残りのユーザーに更新されたルーム情報を送信
+        if (users.size > 0) {
+          io.to(roomId).emit('room-info', { 
+            roomId, 
+            userCount: users.size,
+            users: Array.from(users)
+          });
+        } else {
           rooms.delete(roomId);
         }
       }

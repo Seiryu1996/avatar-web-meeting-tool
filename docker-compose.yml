@@ -6,7 +6,7 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - REACT_APP_BACKEND_URL=${REACT_APP_BACKEND_URL:-http://localhost:3001}
+      - REACT_APP_BACKEND_URL=${REACT_APP_BACKEND_URL:-http://0.0.0.0:3001}
       - REACT_APP_ENVIRONMENT=${REACT_APP_ENVIRONMENT:-development}
     env_file:
       - .env
