@@ -54,12 +54,15 @@ io.on('connection', (socket) => {
   });
 
   socket.on('offer', (data) => {
+    console.log(`Offer received from ${socket.id} for target ${data.targetUserId}`);
     if (data.targetUserId) {
+      console.log(`Forwarding offer to ${data.targetUserId}`);
       io.to(data.targetUserId).emit('offer', { 
         offer: data.offer, 
         fromUserId: socket.id 
       });
     } else {
+      console.log(`Broadcasting offer to room ${data.roomId}`);
       socket.to(data.roomId).emit('offer', { 
         offer: data.offer, 
         fromUserId: socket.id 
