@@ -37,11 +37,23 @@ const VideoCall: React.FC<VideoCallProps> = ({ socket, roomId, username }) => {
       setConnectionStatus(`ルームに参加中`);
       
       if (info.users && Array.isArray(info.users)) {
-        const otherUsers = info.users.filter((userId: string) => userId !== socket.id);
-        setRemoteUsers(otherUsers.map((userId: string) => ({
-          id: userId,
-          username: `ユーザー${userId.slice(-4)}`
-        })));
+        const otherUsers = info.users.filter((user: any) => {
+          const userId = typeof user === 'string' ? user : user.id;
+          return userId !== socket.id;
+        });
+        setRemoteUsers(otherUsers.map((user: any) => {
+          if (typeof user === 'string') {
+            return {
+              id: user,
+              username: `ユーザー${user.slice(-4)}`
+            };
+          } else {
+            return {
+              id: user.id,
+              username: user.username
+            };
+          }
+        }));
       }
     });
 
@@ -245,13 +257,16 @@ const VideoCall: React.FC<VideoCallProps> = ({ socket, roomId, username }) => {
         };
 
         // 新しいユーザーが参加した時の処理
-        socket.on('user-joined', (userId) => {
-          console.log('New user joined, initiating connection:', userId);
+        socket.on('user-joined', (data) => {
+          const userId = typeof data === 'string' ? data : data.userId;
+          const userUsername = typeof data === 'string' ? `ユーザー${data.slice(-4)}` : data.username;
+          
+          console.log('New user joined, initiating connection:', userId, 'username:', userUsername);
           setRemoteUsers(prev => {
             const existing = prev.find(u => u.id === userId);
             if (!existing) {
               handleUserConnection(userId);
-              return [...prev, { id: userId, username: `ユーザー${userId.slice(-4)}` }];
+              return [...prev, { id: userId, username: userUsername }];
             }
             return prev;
           });
@@ -268,7 +283,7 @@ const VideoCall: React.FC<VideoCallProps> = ({ socket, roomId, username }) => {
     
     // ルームに参加
     if (!roomJoined) {
-      socket.emit('join-room', roomId);
+      socket.emit('join-room', { roomId, username });
       setRoomJoined(true);
       setConnectionStatus('ルームに参加しました');
     }

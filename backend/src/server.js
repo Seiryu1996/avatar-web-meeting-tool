@@ -20,11 +20,18 @@ const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
 
 const rooms = new Map();
+const usernames = new Map();
 
 io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
 
-  socket.on('join-room', (roomId) => {
+  socket.on('join-room', (data) => {
+    const roomId = typeof data === 'string' ? data : data.roomId;
+    const username = typeof data === 'string' ? `ユーザー${socket.id.slice(-4)}` : data.username;
+    
+    // ユーザー名を保存
+    usernames.set(socket.id, username);
+    
     // 既に参加済みの場合は処理をスキップ
     if (!rooms.has(roomId)) {
       rooms.set(roomId, new Set());
@@ -40,17 +47,22 @@ io.on('connection', (socket) => {
     
     const roomSize = rooms.get(roomId).size;
     
-    // 既存ユーザーに新しいユーザーの参加を通知
-    socket.to(roomId).emit('user-joined', socket.id);
+    // 既存ユーザーに新しいユーザーの参加を通知（ユーザー名も含む）
+    socket.to(roomId).emit('user-joined', { userId: socket.id, username });
     
     // ルーム内の全ユーザーに最新のルーム情報を送信
+    const usersWithNames = Array.from(rooms.get(roomId)).map(userId => ({
+      id: userId,
+      username: usernames.get(userId) || `ユーザー${userId.slice(-4)}`
+    }));
+    
     io.to(roomId).emit('room-info', { 
       roomId, 
       userCount: roomSize,
-      users: Array.from(rooms.get(roomId))
+      users: usersWithNames
     });
     
-    console.log(`User ${socket.id} joined room ${roomId}, total users: ${roomSize}`);
+    console.log(`User ${socket.id} (${username}) joined room ${roomId}, total users: ${roomSize}`);
   });
 
   socket.on('offer', (data) => {
@@ -138,16 +150,24 @@ io.on('connection', (socket) => {
         
         // 残りのユーザーに更新されたルーム情報を送信
         if (users.size > 0) {
+          const usersWithNames = Array.from(users).map(userId => ({
+            id: userId,
+            username: usernames.get(userId) || `ユーザー${userId.slice(-4)}`
+          }));
+          
           io.to(roomId).emit('room-info', { 
             roomId, 
             userCount: users.size,
-            users: Array.from(users)
+            users: usersWithNames
           });
         } else {
           rooms.delete(roomId);
         }
       }
     });
+    
+    // ユーザー名も削除
+    usernames.delete(socket.id);
   });
 });
 
