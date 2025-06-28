@@ -54,15 +54,45 @@ io.on('connection', (socket) => {
   });
 
   socket.on('offer', (data) => {
-    socket.to(data.roomId).emit('offer', data.offer);
+    if (data.targetUserId) {
+      io.to(data.targetUserId).emit('offer', { 
+        offer: data.offer, 
+        fromUserId: socket.id 
+      });
+    } else {
+      socket.to(data.roomId).emit('offer', { 
+        offer: data.offer, 
+        fromUserId: socket.id 
+      });
+    }
   });
 
   socket.on('answer', (data) => {
-    socket.to(data.roomId).emit('answer', data.answer);
+    if (data.targetUserId) {
+      io.to(data.targetUserId).emit('answer', { 
+        answer: data.answer, 
+        fromUserId: socket.id 
+      });
+    } else {
+      socket.to(data.roomId).emit('answer', { 
+        answer: data.answer, 
+        fromUserId: socket.id 
+      });
+    }
   });
 
   socket.on('ice-candidate', (data) => {
-    socket.to(data.roomId).emit('ice-candidate', data.candidate);
+    if (data.targetUserId) {
+      io.to(data.targetUserId).emit('ice-candidate', { 
+        candidate: data.candidate, 
+        fromUserId: socket.id 
+      });
+    } else {
+      socket.to(data.roomId).emit('ice-candidate', { 
+        candidate: data.candidate, 
+        fromUserId: socket.id 
+      });
+    }
   });
 
   socket.on('get-room-info', (roomId) => {

@@ -20,6 +20,7 @@ const VideoCall: React.FC<VideoCallProps> = ({ socket, roomId, username }) => {
   const remoteStreams = useRef<Map<string, MediaStream>>(new Map());
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [remoteUsers, setRemoteUsers] = useState<RemoteUser[]>([]);
+  const peerConnectionsRef = useRef<Map<string, RTCPeerConnection>>(new Map());
   const [peerConnections, setPeerConnections] = useState<Map<string, RTCPeerConnection>>(new Map());
   const [connectedUsers, setConnectedUsers] = useState<number>(0);
   const [connectionStatus, setConnectionStatus] = useState<string>('接続中...');
@@ -61,6 +62,52 @@ const VideoCall: React.FC<VideoCallProps> = ({ socket, roomId, username }) => {
       setRemoteUsers(prev => prev.filter(u => u.id !== userId));
     });
 
+    const createPeerConnection = (userId: string, stream: MediaStream) => {
+      const pc = new RTCPeerConnection({
+        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+      });
+
+      // トラックを追加
+      stream.getTracks().forEach(track => {
+        pc.addTrack(track, stream);
+      });
+
+      // リモートストリーム受信時
+      pc.ontrack = (event) => {
+        console.log('ontrack fired for user:', userId, 'event:', event);
+        const remoteStream = event.streams[0];
+        if (remoteStream) {
+          console.log('Stream tracks:', remoteStream.getTracks().length);
+          remoteStreams.current.set(userId, remoteStream);
+          
+          // 強制的にすべてのビデオ要素をチェック
+          const allVideos = document.querySelectorAll('video');
+          console.log('Total video elements:', allVideos.length);
+          
+          const videoElement = remoteVideoRefs.current.get(userId);
+          if (videoElement) {
+            console.log('Setting stream to video element');
+            videoElement.srcObject = remoteStream;
+            videoElement.play().catch(console.error);
+          } else {
+            console.log('No video element found for user:', userId);
+          }
+        }
+      };
+
+      pc.onicecandidate = (event) => {
+        if (event.candidate) {
+          socket.emit('ice-candidate', { 
+            roomId, 
+            candidate: event.candidate,
+            targetUserId: userId 
+          });
+        }
+      };
+
+      return pc;
+    };
+
     const initWebRTC = async () => {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ 
@@ -73,75 +120,67 @@ const VideoCall: React.FC<VideoCallProps> = ({ socket, roomId, username }) => {
           localVideoRef.current.srcObject = stream;
         }
 
-        const pc = new RTCPeerConnection({
-          iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
-        });
-
-        stream.getTracks().forEach(track => {
-          pc.addTrack(track, stream);
-        });
-
-        pc.ontrack = (event) => {
-          const remoteStream = event.streams[0];
-          if (remoteStream) {
-            // ストリームをrefに保存し、直接ビデオ要素に設定
-            const availableUser = remoteUsers.find(u => !remoteStreams.current.has(u.id));
-            if (availableUser) {
-              remoteStreams.current.set(availableUser.id, remoteStream);
-              const videoElement = remoteVideoRefs.current.get(availableUser.id);
-              if (videoElement) {
-                videoElement.srcObject = remoteStream;
-                videoElement.play().catch(console.error);
-              }
-            }
+        socket.on('offer', async (data) => {
+          const { offer, fromUserId } = data;
+          let pc = peerConnectionsRef.current.get(fromUserId);
+          
+          if (!pc) {
+            pc = createPeerConnection(fromUserId, stream);
+            peerConnectionsRef.current.set(fromUserId, pc);
+            setPeerConnections(new Map(peerConnectionsRef.current));
           }
-        };
 
-        pc.onicecandidate = (event) => {
-          if (event.candidate) {
-            socket.emit('ice-candidate', { roomId, candidate: event.candidate });
-          }
-        };
-
-        setPeerConnections(prev => new Map(prev.set('default', pc)));
-
-        socket.on('offer', async (offer) => {
-          if (pc.signalingState === 'stable') {
+          try {
             await pc.setRemoteDescription(offer);
             const answer = await pc.createAnswer();
             await pc.setLocalDescription(answer);
-            socket.emit('answer', { roomId, answer });
-          }
-        });
-
-        socket.on('answer', async (answer) => {
-          if (pc.signalingState === 'have-local-offer') {
-            await pc.setRemoteDescription(answer);
-          }
-        });
-
-        socket.on('ice-candidate', async (candidate) => {
-          try {
-            if (pc.remoteDescription) {
-              await pc.addIceCandidate(candidate);
-            } else {
-              // remote descriptionが設定されるまで待つ
-              setTimeout(async () => {
-                if (pc.remoteDescription) {
-                  await pc.addIceCandidate(candidate);
-                }
-              }, 100);
-            }
+            socket.emit('answer', { roomId, answer, targetUserId: fromUserId });
           } catch (error) {
-            console.error('Error adding ICE candidate:', error);
+            console.error('Offer handling error:', error);
+          }
+        });
+
+        socket.on('answer', async (data) => {
+          const { answer, fromUserId } = data;
+          const pc = peerConnectionsRef.current.get(fromUserId);
+          
+          if (pc && pc.signalingState === 'have-local-offer') {
+            try {
+              await pc.setRemoteDescription(answer);
+            } catch (error) {
+              console.error('Answer handling error:', error);
+            }
+          }
+        });
+
+        socket.on('ice-candidate', async (data) => {
+          const { candidate, fromUserId } = data;
+          const pc = peerConnectionsRef.current.get(fromUserId);
+          
+          if (pc && pc.remoteDescription) {
+            try {
+              await pc.addIceCandidate(candidate);
+            } catch (error) {
+              console.error('ICE candidate error:', error);
+            }
           }
         });
 
         socket.on('user-joined', async (userId) => {
-          if (pc.signalingState === 'stable') {
-            const offer = await pc.createOffer();
-            await pc.setLocalDescription(offer);
-            socket.emit('offer', { roomId, offer });
+          let pc = peerConnectionsRef.current.get(userId);
+          
+          if (!pc) {
+            pc = createPeerConnection(userId, stream);
+            peerConnectionsRef.current.set(userId, pc);
+            setPeerConnections(new Map(peerConnectionsRef.current));
+            
+            try {
+              const offer = await pc.createOffer();
+              await pc.setLocalDescription(offer);
+              socket.emit('offer', { roomId, offer, targetUserId: userId });
+            } catch (error) {
+              console.error('User joined offer error:', error);
+            }
           }
         });
 
