@@ -1,5 +1,6 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { Socket } from 'socket.io-client';
+import Timeline from './Timeline';
 
 interface VideoCallProps {
   socket: Socket | null;
@@ -303,58 +304,62 @@ const VideoCall: React.FC<VideoCallProps> = ({ socket, roomId, username }) => {
   }, [socket, roomId]);
 
   return (
-    <div>
-      <h3>Video Call</h3>
-      <div style={{ marginBottom: '10px' }}>
-        <p>状態: {connectionStatus}</p>
-        <p>接続中のユーザー: {connectedUsers + 1}人</p>
-        <p>ルームID: {roomId}</p>
-      </div>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
-        <div>
-          <p>{username}（あなた）</p>
-          <video
-            ref={localVideoRef}
-            autoPlay
-            muted
-            width="200"
-            height="150"
-            style={{ border: '1px solid #ccc' }}
-          />
+    <div style={{ display: 'flex', gap: '20px' }}>
+      <div style={{ flex: 1 }}>
+        <h3>Video Call</h3>
+        <div style={{ marginBottom: '10px' }}>
+          <p>状態: {connectionStatus}</p>
+          <p>接続中のユーザー: {connectedUsers + 1}人</p>
+          <p>ルームID: {roomId}</p>
         </div>
-{remoteUsers.map((user) => (
-          <div key={user.id}>
-            <p>{user.username || `ユーザー${user.id.slice(-4)}`}</p>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
+          <div>
+            <p>{username}（あなた）</p>
             <video
+              ref={localVideoRef}
               autoPlay
-              playsInline
-              muted={false}
-              controls={false}
+              muted
               width="200"
               height="150"
-              style={{ border: '1px solid #ccc', backgroundColor: '#f0f0f0' }}
-              ref={(el) => {
-                if (el) {
-                  remoteVideoRefs.current.set(user.id, el);
-                  const stream = remoteStreams.current.get(user.id);
-                  if (stream) {
-                    console.log('Setting stream to video element for Edge compatibility');
-                    el.srcObject = stream;
-                    el.load();
-                    el.play().catch(e => {
-                      console.error('Video play error:', e);
-                      // Edge対応: 少し遅らせて再試行
-                      setTimeout(() => {
-                        el.play().catch(console.error);
-                      }, 100);
-                    });
-                  }
-                }
-              }}
+              style={{ border: '1px solid #ccc' }}
             />
           </div>
-        ))}
+  {remoteUsers.map((user) => (
+            <div key={user.id}>
+              <p>{user.username || `ユーザー${user.id.slice(-4)}`}</p>
+              <video
+                autoPlay
+                playsInline
+                muted={false}
+                controls={false}
+                width="200"
+                height="150"
+                style={{ border: '1px solid #ccc', backgroundColor: '#f0f0f0' }}
+                ref={(el) => {
+                  if (el) {
+                    remoteVideoRefs.current.set(user.id, el);
+                    const stream = remoteStreams.current.get(user.id);
+                    if (stream) {
+                      console.log('Setting stream to video element for Edge compatibility');
+                      el.srcObject = stream;
+                      el.load();
+                      el.play().catch(e => {
+                        console.error('Video play error:', e);
+                        // Edge対応: 少し遅らせて再試行
+                        setTimeout(() => {
+                          el.play().catch(console.error);
+                        }, 100);
+                      });
+                    }
+                  }
+                }}
+              />
+            </div>
+          ))}
+        </div>
       </div>
+      
+      <Timeline socket={socket} roomId={roomId} />
     </div>
   );
 };

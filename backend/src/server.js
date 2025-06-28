@@ -21,6 +21,29 @@ const upload = multer({ storage: storage });
 
 const rooms = new Map();
 const usernames = new Map();
+const timelines = new Map();
+
+// タイムラインイベントを追加する関数
+const addTimelineEvent = (roomId, type, username, message) => {
+  if (!timelines.has(roomId)) {
+    timelines.set(roomId, []);
+  }
+  
+  const event = {
+    id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    type,
+    username,
+    timestamp: new Date(),
+    message
+  };
+  
+  timelines.get(roomId).push(event);
+  
+  // ルーム内の全ユーザーにイベントを送信
+  io.to(roomId).emit('timeline-event', event);
+  
+  return event;
+};
 
 io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
@@ -35,6 +58,8 @@ io.on('connection', (socket) => {
     // 既に参加済みの場合は処理をスキップ
     if (!rooms.has(roomId)) {
       rooms.set(roomId, new Set());
+      // 最初のユーザーの場合、ミーティング開始イベントを追加
+      addTimelineEvent(roomId, 'meeting-start', 'システム', 'ミーティングが開始されました');
     }
     
     if (rooms.get(roomId).has(socket.id)) {
@@ -46,6 +71,9 @@ io.on('connection', (socket) => {
     rooms.get(roomId).add(socket.id);
     
     const roomSize = rooms.get(roomId).size;
+    
+    // タイムラインイベントを追加
+    addTimelineEvent(roomId, 'user-joined', username, `${username}さんが参加しました`);
     
     // 既存ユーザーに新しいユーザーの参加を通知（ユーザー名も含む）
     socket.to(roomId).emit('user-joined', { userId: socket.id, username });
@@ -133,6 +161,14 @@ io.on('connection', (socket) => {
     }
   });
 
+  socket.on('get-timeline', (roomId) => {
+    if (timelines.has(roomId)) {
+      socket.emit('timeline-history', timelines.get(roomId));
+    } else {
+      socket.emit('timeline-history', []);
+    }
+  });
+
   socket.on('avatar-update', (data) => {
     socket.to(data.roomId).emit('avatar-update', {
       userId: socket.id,
@@ -142,10 +178,15 @@ io.on('connection', (socket) => {
 
   socket.on('disconnect', () => {
     console.log('User disconnected:', socket.id);
+    const disconnectedUsername = usernames.get(socket.id) || `ユーザー${socket.id.slice(-4)}`;
     
     rooms.forEach((users, roomId) => {
       if (users.has(socket.id)) {
         users.delete(socket.id);
+        
+        // タイムラインイベントを追加
+        addTimelineEvent(roomId, 'user-left', disconnectedUsername, `${disconnectedUsername}さんが退出しました`);
+        
         socket.to(roomId).emit('user-left', socket.id);
         
         // 残りのユーザーに更新されたルーム情報を送信
@@ -161,7 +202,11 @@ io.on('connection', (socket) => {
             users: usersWithNames
           });
         } else {
+          // 最後のユーザーが退出した場合、ミーティング終了イベントを追加
+          addTimelineEvent(roomId, 'meeting-end', 'システム', 'ミーティングが終了しました');
           rooms.delete(roomId);
+          // タイムラインも削除（必要に応じて保持することも可能）
+          // timelines.delete(roomId);
         }
       }
     });
