@@ -47,8 +47,10 @@ const App: React.FC = () => {
       reader.onload = (e) => {
         try {
           const data = JSON.parse(e.target?.result as string);
+          console.log('App: Loaded avatar data:', data);
           setAvatarData(data);
         } catch (error) {
+          console.error('App: JSON parse error:', error);
           alert('Invalid JSON file');
         }
       };
@@ -86,6 +88,11 @@ const App: React.FC = () => {
             onChange={handleFileUpload}
             ref={fileInputRef}
           />
+          {avatarData && (
+            <div className="avatar-preview">
+              <AvatarCanvas avatarData={avatarData} />
+            </div>
+          )}
           <button onClick={joinRoom} disabled={!roomId || !avatarData || !username.trim()}>
             Join Meeting
           </button>
