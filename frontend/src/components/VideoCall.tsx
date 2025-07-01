@@ -60,10 +60,8 @@ const VideoCall: React.FC<VideoCallProps> = ({ socket, roomId, username }) => {
 
     socket.on('offer', async (data) => {
       const { offer, fromUserId } = data;
-      console.log('Received offer from user:', fromUserId);
       
       if (!localStream) {
-        console.log('Local stream not ready, storing pending offer');
         pendingOffersRef.current.push({ offer, fromUserId });
         return;
       }
@@ -73,36 +71,27 @@ const VideoCall: React.FC<VideoCallProps> = ({ socket, roomId, username }) => {
 
     socket.on('answer', async (data) => {
       const { answer, fromUserId } = data;
-      console.log('Received answer from user:', fromUserId);
       const pc = peerConnectionsRef.current.get(fromUserId);
       
       if (pc && pc.signalingState === 'have-local-offer') {
         try {
-          console.log('Setting remote description from answer');
-          await pc.setRemoteDescription(answer);
-          console.log('Answer processed successfully');
+            await pc.setRemoteDescription(answer);
         } catch (error) {
-          console.error('Answer handling error:', error);
         }
       } else {
-        console.log('PC state not ready for answer:', pc?.signalingState);
       }
     });
 
     socket.on('ice-candidate', async (data) => {
       const { candidate, fromUserId } = data;
-      console.log('Received ICE candidate from user:', fromUserId);
       const pc = peerConnectionsRef.current.get(fromUserId);
       
       if (pc && pc.remoteDescription) {
         try {
           await pc.addIceCandidate(candidate);
-          console.log('ICE candidate added successfully');
         } catch (error) {
-          console.error('ICE candidate error:', error);
         }
       } else {
-        console.log('PC not ready for ICE candidate');
       }
     });
 
@@ -134,11 +123,8 @@ const VideoCall: React.FC<VideoCallProps> = ({ socket, roomId, username }) => {
 
       // リモートストリーム受信時
       pc.ontrack = (event) => {
-        console.log('ontrack fired for user:', userId, 'event:', event);
         const remoteStream = event.streams[0];
         if (remoteStream) {
-          console.log('Stream tracks:', remoteStream.getTracks().length);
-          console.log('Stream tracks details:', remoteStream.getTracks().map(t => ({kind: t.kind, enabled: t.enabled, readyState: t.readyState})));
           remoteStreams.current.set(userId, remoteStream);
           
           // React stateを更新してre-renderを強制
@@ -148,7 +134,6 @@ const VideoCall: React.FC<VideoCallProps> = ({ socket, roomId, username }) => {
                 ? { ...user, stream: remoteStream } 
                 : user
             );
-            console.log('Updated remote users:', updated);
             return updated;
           });
           
@@ -156,26 +141,22 @@ const VideoCall: React.FC<VideoCallProps> = ({ socket, roomId, username }) => {
           setTimeout(() => {
             const videoElement = remoteVideoRefs.current.get(userId);
             if (videoElement) {
-              console.log('Setting stream to video element for user:', userId);
-              videoElement.srcObject = remoteStream;
+                videoElement.srcObject = remoteStream;
               videoElement.load();
               videoElement.play().catch(e => {
-                console.error('Video play error in ontrack:', e);
-                // Edge対応: 更に遅らせて再試行
+                  // Edge対応: 更に遅らせて再試行
                 setTimeout(() => {
-                  videoElement.play().catch(console.error);
+                  videoElement.play().catch(() => {});
                 }, 200);
               });
             } else {
-              console.log('No video element found for user:', userId);
-            }
+              }
           }, 100);
         }
       };
 
       pc.onicecandidate = (event) => {
         if (event.candidate) {
-          console.log('ICE candidate generated for user:', userId);
           socket.emit('ice-candidate', { 
             roomId, 
             candidate: event.candidate,
@@ -185,11 +166,9 @@ const VideoCall: React.FC<VideoCallProps> = ({ socket, roomId, username }) => {
       };
 
       pc.onconnectionstatechange = () => {
-        console.log('Connection state changed for user:', userId, 'state:', pc.connectionState);
       };
 
       pc.oniceconnectionstatechange = () => {
-        console.log('ICE connection state changed for user:', userId, 'state:', pc.iceConnectionState);
       };
 
       return pc;
@@ -199,21 +178,17 @@ const VideoCall: React.FC<VideoCallProps> = ({ socket, roomId, username }) => {
       let pc = peerConnectionsRef.current.get(fromUserId);
       
       if (!pc) {
-        console.log('Creating new peer connection for incoming offer from:', fromUserId);
         pc = createPeerConnection(fromUserId, stream);
         peerConnectionsRef.current.set(fromUserId, pc);
         setPeerConnections(new Map(peerConnectionsRef.current));
       }
 
       try {
-        console.log('Setting remote description and creating answer');
         await pc.setRemoteDescription(offer);
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
-        console.log('Sending answer to user:', fromUserId);
         socket.emit('answer', { roomId, answer, targetUserId: fromUserId });
       } catch (error) {
-        console.error('Offer handling error:', error);
       }
     };
 
@@ -230,7 +205,6 @@ const VideoCall: React.FC<VideoCallProps> = ({ socket, roomId, username }) => {
         }
 
         // 保留されたofferを処理
-        console.log('Processing pending offers:', pendingOffersRef.current.length);
         for (const pendingOffer of pendingOffersRef.current) {
           await handleOffer(pendingOffer.offer, pendingOffer.fromUserId, stream);
         }
@@ -238,7 +212,6 @@ const VideoCall: React.FC<VideoCallProps> = ({ socket, roomId, username }) => {
 
         // 既存ユーザーとの接続を開始
         const handleUserConnection = async (userId: string) => {
-          console.log('Creating offer for user:', userId);
           let pc = peerConnectionsRef.current.get(userId);
           
           if (!pc) {
@@ -249,10 +222,8 @@ const VideoCall: React.FC<VideoCallProps> = ({ socket, roomId, username }) => {
             try {
               const offer = await pc.createOffer();
               await pc.setLocalDescription(offer);
-              console.log('Sending offer to user:', userId);
               socket.emit('offer', { roomId, offer, targetUserId: userId });
             } catch (error) {
-              console.error('User connection offer error:', error);
             }
           }
         };
@@ -262,7 +233,6 @@ const VideoCall: React.FC<VideoCallProps> = ({ socket, roomId, username }) => {
           const userId = typeof data === 'string' ? data : data.userId;
           const userUsername = typeof data === 'string' ? `ユーザー${data.slice(-4)}` : data.username;
           
-          console.log('New user joined, initiating connection:', userId, 'username:', userUsername);
           setRemoteUsers(prev => {
             const existing = prev.find(u => u.id === userId);
             if (!existing) {
@@ -276,7 +246,6 @@ const VideoCall: React.FC<VideoCallProps> = ({ socket, roomId, username }) => {
 
 
       } catch (error) {
-        console.error('Camera access error:', error);
       }
     };
 
@@ -340,14 +309,12 @@ const VideoCall: React.FC<VideoCallProps> = ({ socket, roomId, username }) => {
                     remoteVideoRefs.current.set(user.id, el);
                     const stream = remoteStreams.current.get(user.id);
                     if (stream) {
-                      console.log('Setting stream to video element for Edge compatibility');
-                      el.srcObject = stream;
+                              el.srcObject = stream;
                       el.load();
                       el.play().catch(e => {
-                        console.error('Video play error:', e);
                         // Edge対応: 少し遅らせて再試行
                         setTimeout(() => {
-                          el.play().catch(console.error);
+                          el.play().catch(() => {});
                         }, 100);
                       });
                     }

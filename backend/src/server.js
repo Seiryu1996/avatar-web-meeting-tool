@@ -46,7 +46,6 @@ const addTimelineEvent = (roomId, type, username, message) => {
 };
 
 io.on('connection', (socket) => {
-  console.log('User connected:', socket.id);
 
   socket.on('join-room', (data) => {
     const roomId = typeof data === 'string' ? data : data.roomId;
@@ -63,7 +62,6 @@ io.on('connection', (socket) => {
     }
     
     if (rooms.get(roomId).has(socket.id)) {
-      console.log(`User ${socket.id} already in room ${roomId}`);
       return;
     }
     
@@ -90,19 +88,15 @@ io.on('connection', (socket) => {
       users: usersWithNames
     });
     
-    console.log(`User ${socket.id} (${username}) joined room ${roomId}, total users: ${roomSize}`);
   });
 
   socket.on('offer', (data) => {
-    console.log(`Offer received from ${socket.id} for target ${data.targetUserId}`);
     if (data.targetUserId) {
-      console.log(`Forwarding offer to ${data.targetUserId}`);
       io.to(data.targetUserId).emit('offer', { 
         offer: data.offer, 
         fromUserId: socket.id 
       });
     } else {
-      console.log(`Broadcasting offer to room ${data.roomId}`);
       socket.to(data.roomId).emit('offer', { 
         offer: data.offer, 
         fromUserId: socket.id 
@@ -139,11 +133,8 @@ io.on('connection', (socket) => {
   });
 
   socket.on('get-room-info', (roomId) => {
-    console.log(`Get room info request from ${socket.id} for room ${roomId}`);
-    console.log('Available rooms:', Array.from(rooms.keys()));
     
     if (rooms.has(roomId)) {
-      console.log(`Room ${roomId} exists with users:`, Array.from(rooms.get(roomId)));
       if (rooms.get(roomId).has(socket.id)) {
         const roomSize = rooms.get(roomId).size;
         const roomData = { 
@@ -152,12 +143,9 @@ io.on('connection', (socket) => {
           users: Array.from(rooms.get(roomId))
         };
         socket.emit('room-info', roomData);
-        console.log(`Sent room info to ${socket.id}:`, roomData);
       } else {
-        console.log(`User ${socket.id} not found in room ${roomId}`);
       }
     } else {
-      console.log(`Room ${roomId} does not exist`);
     }
   });
 
@@ -177,7 +165,6 @@ io.on('connection', (socket) => {
   });
 
   socket.on('disconnect', () => {
-    console.log('User disconnected:', socket.id);
     const disconnectedUsername = usernames.get(socket.id) || `ユーザー${socket.id.slice(-4)}`;
     
     rooms.forEach((users, roomId) => {
@@ -231,5 +218,4 @@ app.get('/health', (req, res) => {
 
 const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
 });

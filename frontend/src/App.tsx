@@ -21,17 +21,12 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const backendUrl = process.env.REACT_APP_BACKEND_URL || 'http://localhost:3001';
-    console.log('Connecting to backend:', backendUrl);
     
     const newSocket = io(backendUrl);
     
-    newSocket.on('connect', () => {
-      console.log('App: Socket connected with ID:', newSocket.id);
-    });
+    newSocket.on('connect', () => {});
     
-    newSocket.on('disconnect', () => {
-      console.log('App: Socket disconnected');
-    });
+    newSocket.on('disconnect', () => {});
     
     setSocket(newSocket);
 
@@ -47,10 +42,8 @@ const App: React.FC = () => {
       reader.onload = (e) => {
         try {
           const data = JSON.parse(e.target?.result as string);
-          console.log('App: Loaded avatar data:', data);
           setAvatarData(data);
         } catch (error) {
-          console.error('App: JSON parse error:', error);
           alert('Invalid JSON file');
         }
       };

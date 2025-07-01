@@ -32,7 +32,7 @@ const FaceTracker: React.FC<FaceTrackerProps> = ({ onTrackingUpdate }) => {
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
           videoRef.current.addEventListener('loadedmetadata', () => {
-            videoRef.current?.play().catch(e => console.log('Video play failed:', e));
+            videoRef.current?.play().catch(() => {});
           });
           
           // シンプルな擬似トラッキング（開発用）
@@ -60,7 +60,6 @@ const FaceTracker: React.FC<FaceTrackerProps> = ({ onTrackingUpdate }) => {
           return () => clearInterval(trackingInterval);
         }
       } catch (error) {
-        console.error('Camera access failed:', error);
       }
     };
 

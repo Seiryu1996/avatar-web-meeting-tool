@@ -17,9 +17,7 @@ const AvatarCanvas: React.FC<AvatarCanvasProps> = ({ avatarData }) => {
   });
 
   useEffect(() => {
-    console.log('AvatarCanvas: avatarData received:', avatarData);
     if (!avatarData || !canvasRef.current) {
-      console.log('AvatarCanvas: No avatarData or canvas ref');
       return;
     }
 
@@ -29,16 +27,12 @@ const AvatarCanvas: React.FC<AvatarCanvasProps> = ({ avatarData }) => {
 
     const drawAvatar = () => {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      console.log('AvatarCanvas: Drawing avatar, parts:', avatarData.parts);
       
       if (avatarData.parts) {
         avatarData.parts.forEach((part: any, index: number) => {
-          console.log(`AvatarCanvas: Processing part ${index}:`, part);
-          console.log(`AvatarCanvas: Part keys:`, Object.keys(part));
           if (part.imageData && part.visible !== false) {
             const img = new Image();
             img.onload = () => {
-              console.log(`AvatarCanvas: Image loaded for part ${index}`);
               // JSONの元の座標を使用し、トラッキングデータを適用
               const baseX = part.x || 0;
               const baseY = part.y || 0;
@@ -71,16 +65,10 @@ const AvatarCanvas: React.FC<AvatarCanvasProps> = ({ avatarData }) => {
               ctx.drawImage(img, -pivotX, -pivotY);
               ctx.restore();
             };
-            img.onerror = () => {
-              console.error(`AvatarCanvas: Failed to load image for part ${index}:`, part.imageData);
-            };
+            img.onerror = () => {};
             img.src = part.imageData;
-          } else {
-            console.log(`AvatarCanvas: Skipping part ${index} - no image or not visible`);
           }
         });
-      } else {
-        console.log('AvatarCanvas: No parts found in avatarData');
       }
     };
 
