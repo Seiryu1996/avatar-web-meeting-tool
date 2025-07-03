@@ -1,6 +1,8 @@
 import React, { useRef, useEffect, useCallback } from 'react';
-import { FaceMesh } from '@mediapipe/face_mesh';
-import { Camera } from '@mediapipe/camera_utils';
+
+// MediaPipeの型定義
+declare const FaceMesh: any;
+declare const Camera: any;
 
 declare global {
   interface Window {
@@ -20,11 +22,29 @@ interface FaceTrackerProps {
   }) => void;
 }
 
+const loadMediaPipeLibraries = async () => {
+  return new Promise<void>((resolve, reject) => {
+    // Face Meshライブラリを読み込み
+    const faceMeshScript = document.createElement('script');
+    faceMeshScript.src = 'https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js';
+    faceMeshScript.onload = () => {
+      // Camera Utilsライブラリを読み込み
+      const cameraScript = document.createElement('script');
+      cameraScript.src = 'https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js';
+      cameraScript.onload = () => resolve();
+      cameraScript.onerror = () => reject(new Error('Camera Utils loading failed'));
+      document.head.appendChild(cameraScript);
+    };
+    faceMeshScript.onerror = () => reject(new Error('Face Mesh loading failed'));
+    document.head.appendChild(faceMeshScript);
+  });
+};
+
 const FaceTracker: React.FC<FaceTrackerProps> = ({ onTrackingUpdate }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const faceMeshRef = useRef<FaceMesh | null>(null);
-  const cameraRef = useRef<Camera | null>(null);
+  const faceMeshRef = useRef<any>(null);
+  const cameraRef = useRef<any>(null);
 
   const onResults = useCallback((results: any) => {
     if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
@@ -84,9 +104,14 @@ const FaceTracker: React.FC<FaceTrackerProps> = ({ onTrackingUpdate }) => {
   useEffect(() => {
     const initMediaPipe = async () => {
       try {
+        // MediaPipeライブラリを動的に読み込み
+        if (!window.FaceMesh) {
+          await loadMediaPipeLibraries();
+        }
+        
         // MediaPipe FaceMeshを初期化
-        const faceMesh = new FaceMesh({
-          locateFile: (file) => {
+        const faceMesh = new window.FaceMesh({
+          locateFile: (file: string) => {
             return `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`;
           }
         });
@@ -103,7 +128,7 @@ const FaceTracker: React.FC<FaceTrackerProps> = ({ onTrackingUpdate }) => {
         
         // カメラを初期化
         if (videoRef.current) {
-          const camera = new Camera(videoRef.current, {
+          const camera = new window.Camera(videoRef.current, {
             onFrame: async () => {
               if (faceMeshRef.current && videoRef.current) {
                 await faceMeshRef.current.send({ image: videoRef.current });
