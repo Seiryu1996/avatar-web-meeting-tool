@@ -1,145 +1,179 @@
-import React, { useState, useEffect } from 'react';
-import { Socket } from 'socket.io-client';
+// リファクタリングされたTimelineコンポーネント
 
-interface TimelineEvent {
-  id: string;
-  type: 'user-joined' | 'user-left' | 'video-on' | 'video-off' | 'audio-on' | 'audio-off' | 'meeting-start' | 'meeting-end';
-  username: string;
-  timestamp: Date;
-  message: string;
-}
+import React, { useRef, useEffect } from 'react';
+import { TimelineProps, TimelineEvent } from '../types/timeline';
+import { DEFAULT_TIMELINE_CONFIG, TIMELINE_STYLES } from '../constants/timeline';
+import { useTimeline } from '../hooks/useTimeline';
+import { 
+  getEventIcon, 
+  getEventColor, 
+  formatTimestamp,
+  formatRelativeTime 
+} from '../utils/timelineUtils';
 
-interface TimelineProps {
-  socket: Socket | null;
-  roomId: string;
-}
+/**
+ * タイムラインイベントを表示するコンポーネント
+ * ソケット通信を通じてリアルタイムでイベントを受信し、表示します。
+ */
+const Timeline: React.FC<TimelineProps> = ({ 
+  socket, 
+  roomId, 
+  className,
+  style 
+}) => {
+  const eventsContainerRef = useRef<HTMLDivElement>(null);
+  
+  // タイムラインの状態管理
+  const { events, isLoading, error, refetch } = useTimeline({
+    socket,
+    roomId,
+    maxEvents: DEFAULT_TIMELINE_CONFIG.maxEvents,
+    autoFetch: true,
+  });
 
-const Timeline: React.FC<TimelineProps> = ({ socket, roomId }) => {
-  const [events, setEvents] = useState<TimelineEvent[]>([]);
-
+  // 新しいイベントが追加された時に自動スクロール
   useEffect(() => {
-    if (!socket || !roomId) return;
+    if (DEFAULT_TIMELINE_CONFIG.autoScroll && eventsContainerRef.current) {
+      const container = eventsContainerRef.current;
+      container.scrollTop = container.scrollHeight;
+    }
+  }, [events]);
 
-    socket.on('timeline-event', (event: TimelineEvent) => {
-      setEvents(prev => [...prev, { ...event, timestamp: new Date(event.timestamp) }]);
-    });
+  // エラー状態の表示
+  const renderError = () => (
+    <div style={TIMELINE_STYLES.errorState}>
+      <div>⚠️ {error}</div>
+      <button 
+        onClick={refetch}
+        style={{
+          marginTop: '8px',
+          padding: '4px 8px',
+          backgroundColor: '#f44336',
+          color: 'white',
+          border: 'none',
+          borderRadius: '4px',
+          cursor: 'pointer',
+          fontSize: '12px',
+        }}
+      >
+        再試行
+      </button>
+    </div>
+  );
 
-    socket.on('timeline-history', (history: TimelineEvent[]) => {
-      setEvents(history.map(event => ({ ...event, timestamp: new Date(event.timestamp) })));
-    });
+  // ローディング状態の表示
+  const renderLoading = () => (
+    <div style={TIMELINE_STYLES.loadingState}>
+      📡 読み込み中...
+    </div>
+  );
 
-    // タイムライン履歴を要求
-    socket.emit('get-timeline', roomId);
+  // 空の状態の表示
+  const renderEmptyState = () => (
+    <div style={TIMELINE_STYLES.emptyState}>
+      📝 イベントがありません
+    </div>
+  );
 
-    return () => {
-      socket.off('timeline-event');
-      socket.off('timeline-history');
+  // イベントアイテムの表示
+  const renderEventItem = (event: TimelineEvent) => {
+    const displayConfig = {
+      icon: getEventIcon(event.type),
+      color: getEventColor(event.type),
     };
-  }, [socket, roomId]);
 
-  const formatTime = (timestamp: Date) => {
-    return timestamp.toLocaleTimeString('ja-JP', { 
-      hour: '2-digit', 
-      minute: '2-digit',
-      second: '2-digit'
-    });
+    return (
+      <div
+        key={event.id}
+        style={{
+          ...TIMELINE_STYLES.eventItem,
+          borderLeft: `4px solid ${displayConfig.color}`,
+        }}
+      >
+        <span style={TIMELINE_STYLES.eventIcon}>
+          {displayConfig.icon}
+        </span>
+        
+        <div style={TIMELINE_STYLES.eventContent}>
+          <div style={TIMELINE_STYLES.eventMessage}>
+            {event.message}
+          </div>
+          {DEFAULT_TIMELINE_CONFIG.showTimestamp && (
+            <div style={TIMELINE_STYLES.eventTimestamp}>
+              {formatTimestamp(event.timestamp)}
+            </div>
+          )}
+        </div>
+      </div>
+    );
   };
 
-  const getEventIcon = (type: string) => {
-    switch (type) {
-      case 'user-joined': return '👋';
-      case 'user-left': return '👋';
-      case 'video-on': return '📹';
-      case 'video-off': return '📹';
-      case 'audio-on': return '🔊';
-      case 'audio-off': return '🔇';
-      case 'meeting-start': return '🎬';
-      case 'meeting-end': return '🏁';
-      default: return '📝';
+  // イベントリストの表示
+  const renderEvents = () => {
+    if (isLoading && events.length === 0) {
+      return renderLoading();
     }
-  };
 
-  const getEventColor = (type: string) => {
-    switch (type) {
-      case 'user-joined': return '#4CAF50';
-      case 'user-left': return '#f44336';
-      case 'video-on': return '#2196F3';
-      case 'video-off': return '#FF9800';
-      case 'audio-on': return '#4CAF50';
-      case 'audio-off': return '#f44336';
-      case 'meeting-start': return '#9C27B0';
-      case 'meeting-end': return '#607D8B';
-      default: return '#666';
+    if (error) {
+      return renderError();
     }
+
+    if (events.length === 0) {
+      return renderEmptyState();
+    }
+
+    return events.map(renderEventItem);
   };
 
   return (
-    <div style={{ 
-      width: '300px', 
-      height: '400px', 
-      border: '1px solid #ccc', 
-      borderRadius: '8px',
-      padding: '16px',
-      backgroundColor: '#f9f9f9',
-      overflow: 'hidden',
-      display: 'flex',
-      flexDirection: 'column'
-    }}>
-      <h3 style={{ margin: '0 0 16px 0', fontSize: '18px', color: '#333' }}>
+    <div 
+      className={className}
+      style={{
+        ...TIMELINE_STYLES.container,
+        width: DEFAULT_TIMELINE_CONFIG.width,
+        height: DEFAULT_TIMELINE_CONFIG.height,
+        ...style,
+      }}
+      role="log"
+      aria-label="ミーティングタイムライン"
+    >
+      <h3 style={TIMELINE_STYLES.header}>
         タイムライン
+        {isLoading && events.length > 0 && (
+          <span style={{ fontSize: '12px', color: '#666', marginLeft: '8px' }}>
+            📡 更新中...
+          </span>
+        )}
       </h3>
       
-      <div style={{ 
-        flex: 1, 
-        overflowY: 'auto',
-        paddingRight: '8px'
-      }}>
-        {events.length === 0 ? (
-          <p style={{ color: '#666', fontStyle: 'italic' }}>
-            イベントがありません
-          </p>
-        ) : (
-          events.map((event) => (
-            <div 
-              key={event.id}
-              style={{
-                display: 'flex',
-                alignItems: 'flex-start',
-                marginBottom: '12px',
-                padding: '8px',
-                backgroundColor: 'white',
-                borderRadius: '6px',
-                borderLeft: `4px solid ${getEventColor(event.type)}`,
-                boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
-              }}
-            >
-              <span style={{ 
-                fontSize: '16px', 
-                marginRight: '8px',
-                minWidth: '20px'
-              }}>
-                {getEventIcon(event.type)}
-              </span>
-              
-              <div style={{ flex: 1 }}>
-                <div style={{ 
-                  fontSize: '14px', 
-                  color: '#333',
-                  marginBottom: '2px'
-                }}>
-                  {event.message}
-                </div>
-                <div style={{ 
-                  fontSize: '11px', 
-                  color: '#666'
-                }}>
-                  {formatTime(event.timestamp)}
-                </div>
-              </div>
-            </div>
-          ))
-        )}
+      <div 
+        ref={eventsContainerRef}
+        style={TIMELINE_STYLES.eventsContainer}
+        role="feed"
+        aria-live="polite"
+        aria-label={`${events.length}件のイベント`}
+      >
+        {renderEvents()}
       </div>
+
+      {/* 開発環境での状態表示 */}
+      {process.env.NODE_ENV === 'development' && (
+        <div style={{
+          position: 'absolute',
+          bottom: '10px',
+          right: '10px',
+          backgroundColor: 'rgba(0,0,0,0.8)',
+          color: 'white',
+          padding: '4px 8px',
+          borderRadius: '4px',
+          fontSize: '10px',
+          zIndex: 1000,
+        }}>
+          <div>Events: {events.length}</div>
+          <div>Socket: {socket?.connected ? 'Connected' : 'Disconnected'}</div>
+          <div>Room: {roomId || 'None'}</div>
+        </div>
+      )}
     </div>
   );
 };

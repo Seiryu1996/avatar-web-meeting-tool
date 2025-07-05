@@ -1,155 +1,186 @@
-import React, { useRef, useEffect, useState, useCallback } from 'react';
-import FaceTracker from './FaceTracker';
+// リファクタリングされたAvatarCanvasコンポーネント
 
-interface AvatarCanvasProps {
-  avatarData: any;
-}
+import React, { useRef, useCallback } from 'react';
+import { AvatarCanvasProps, FaceTrackingData } from '../types/avatarCanvas';
+import { DEFAULT_AVATAR_CONFIG } from '../constants/avatarCanvas';
+import { useAvatarCanvas } from '../hooks/useAvatarCanvas';
 
-const AvatarCanvas: React.FC<AvatarCanvasProps> = ({ avatarData }) => {
+/**
+ * アバターを描画するキャンバスコンポーネント
+ * 顔認識データに基づいてアバターをリアルタイムでアニメーション表示します。
+ */
+const AvatarCanvas: React.FC<AvatarCanvasProps> = ({
+  avatarData,
+  className,
+  style,
+  width = DEFAULT_AVATAR_CONFIG.width,
+  height = DEFAULT_AVATAR_CONFIG.height,
+  onError,
+}) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const animationFrameRef = useRef<number | null>(null);
-  const imagesRef = useRef<Map<number, HTMLImageElement>>(new Map());
-  const [trackingData, setTrackingData] = useState({ 
-    leftEye: 1, 
-    rightEye: 1, 
-    mouth: 0, 
-    headX: 0, 
-    headY: 0, 
-    headZ: 0 
+
+  // AvatarCanvasの状態とレンダリングを管理
+  const {
+    trackingData,
+    imageLoadState,
+    isRendering,
+    error,
+    updateTracking,
+    clearError,
+  } = useAvatarCanvas({
+    avatarData,
+    canvasRef,
+    config: { width, height },
+    onError,
   });
-  const [imagesLoaded, setImagesLoaded] = useState(false);
 
-  // 画像を事前に読み込んでキャッシュし、ちらつきを防ぐ
-  useEffect(() => {
-    if (!avatarData?.parts) return;
-    
-    let loadedCount = 0;
-    const totalImages = avatarData.parts.filter((part: any) => part.imageData && part.visible !== false).length;
-    
-    if (totalImages === 0) {
-      setImagesLoaded(true);
-      return;
+  // FaceTrackerからのトラッキングデータ更新ハンドラー
+  const handleTrackingUpdate = useCallback((data: FaceTrackingData) => {
+    updateTracking(data);
+  }, [updateTracking]);
+
+  // ローディング状態の表示
+  const renderLoadingState = () => {
+    if (!avatarData) {
+      return (
+        <div style={{ 
+          display: 'flex', 
+          alignItems: 'center', 
+          justifyContent: 'center',
+          width, 
+          height,
+          backgroundColor: '#f5f5f5',
+          border: '1px solid #ddd',
+          borderRadius: '4px',
+          color: '#666'
+        }}>
+          📂 アバターデータを読み込んでください
+        </div>
+      );
     }
-    
-    avatarData.parts.forEach((part: any, index: number) => {
-      if (part.imageData && part.visible !== false) {
-        if (!imagesRef.current.has(index)) {
-          const img = new Image();
-          img.onload = () => {
-            imagesRef.current.set(index, img);
-            loadedCount++;
-            if (loadedCount === totalImages) {
-              setImagesLoaded(true);
-            }
-          };
-          img.onerror = () => {
-            loadedCount++;
-            if (loadedCount === totalImages) {
-              setImagesLoaded(true);
-            }
-          };
-          img.src = part.imageData;
-        }
-      }
-    });
-  }, [avatarData]);
-  
-  const drawAvatar = useCallback(() => {
-    if (!canvasRef.current || !avatarData?.parts || !imagesLoaded) return;
-    
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    
-    // キャンバスをクリア
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    
-    // パーツを描画
-    avatarData.parts.forEach((part: any, index: number) => {
-      if (part.imageData && part.visible !== false) {
-        const img = imagesRef.current.get(index);
-        if (!img) return;
-        
-        const baseX = part.x || 0;
-        const baseY = part.y || 0;
-        const scaleX = baseX > 400 ? 400 / baseX * 0.8 : 1;
-        const scaleY = baseY > 300 ? 300 / baseY * 0.8 : 1;
-        const x = baseX * scaleX + trackingData.headX * 30;
-        const y = baseY * scaleY + trackingData.headY * 30;
-        const scale = part.scale || 1;
-        const baseScale = part.baseScale || 1;
-        let totalScale = scale * baseScale * 0.3;
-        const pivotX = part.pivotX || 0;
-        const pivotY = part.pivotY || 0;
-        
-        // パーツタイプに応じてトラッキングデータを適用
-        if (part.type === 'left_eye') {
-          totalScale *= Math.max(0.1, trackingData.leftEye);
-        } else if (part.type === 'right_eye') {
-          totalScale *= Math.max(0.1, trackingData.rightEye);
-        } else if (part.type === 'mouth') {
-          totalScale *= (1 + trackingData.mouth * 0.5);
-        }
-        
-        ctx.save();
-        ctx.translate(x, y);
-        if (part.rotation) {
-          ctx.rotate(part.rotation * Math.PI / 180);
-        }
-        ctx.scale(totalScale, totalScale);
-        ctx.drawImage(img, -pivotX, -pivotY);
-        ctx.restore();
-      }
-    });
-  }, [avatarData, trackingData, imagesLoaded]);
-  
-  // アニメーションフレームで描画を更新し、スムーズなアニメーションを実現
-  useEffect(() => {
-    const animate = () => {
-      drawAvatar();
-      animationFrameRef.current = requestAnimationFrame(animate);
-    };
-    
-    if (imagesLoaded) {
-      animationFrameRef.current = requestAnimationFrame(animate);
+
+    if (!imageLoadState.isComplete) {
+      const progress = imageLoadState.total > 0 
+        ? Math.round((imageLoadState.loaded / imageLoadState.total) * 100) 
+        : 0;
+      
+      return (
+        <div style={{ 
+          display: 'flex', 
+          flexDirection: 'column',
+          alignItems: 'center', 
+          justifyContent: 'center',
+          width, 
+          height,
+          backgroundColor: '#f5f5f5',
+          border: '1px solid #ddd',
+          borderRadius: '4px',
+          color: '#666'
+        }}>
+          <div>🎨 アバター画像を読み込み中...</div>
+          <div style={{ marginTop: '8px', fontSize: '12px' }}>
+            {progress}% ({imageLoadState.loaded}/{imageLoadState.total})
+          </div>
+          {imageLoadState.failed > 0 && (
+            <div style={{ marginTop: '4px', fontSize: '11px', color: '#f44336' }}>
+              {imageLoadState.failed}個の画像の読み込みに失敗
+            </div>
+          )}
+        </div>
+      );
     }
-    
-    return () => {
-      if (animationFrameRef.current) {
-        cancelAnimationFrame(animationFrameRef.current);
-      }
-    };
-  }, [drawAvatar, imagesLoaded]);
 
-  const handleTrackingUpdate = useCallback((data: { 
-    leftEye: number; 
-    rightEye: number; 
-    mouth: number; 
-    headX: number; 
-    headY: number; 
-    headZ: number; 
-  }) => {
-    // トラッキングデータをスムージングして急激な変化を抑制
-    setTrackingData(prevData => ({
-      leftEye: prevData.leftEye * 0.7 + data.leftEye * 0.3,
-      rightEye: prevData.rightEye * 0.7 + data.rightEye * 0.3,
-      mouth: prevData.mouth * 0.7 + data.mouth * 0.3,
-      headX: prevData.headX * 0.8 + data.headX * 0.2,
-      headY: prevData.headY * 0.8 + data.headY * 0.2,
-      headZ: prevData.headZ * 0.8 + data.headZ * 0.2
-    }));
-  }, []);
+    return null;
+  };
 
+  // エラー状態の表示
+  const renderError = () => (
+    <div style={{
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      justifyContent: 'center',
+      width,
+      height,
+      backgroundColor: '#ffebee',
+      border: '1px solid #f44336',
+      borderRadius: '4px',
+      color: '#d32f2f',
+      padding: '16px',
+      textAlign: 'center',
+    }}>
+      <div style={{ marginBottom: '8px' }}>⚠️ エラーが発生しました</div>
+      <div style={{ fontSize: '12px', marginBottom: '8px' }}>{error}</div>
+      <button
+        onClick={clearError}
+        style={{
+          padding: '4px 8px',
+          backgroundColor: '#f44336',
+          color: 'white',
+          border: 'none',
+          borderRadius: '4px',
+          cursor: 'pointer',
+          fontSize: '12px',
+        }}
+      >
+        エラーをクリア
+      </button>
+    </div>
+  );
+
+  // FaceTrackerコンポーネント
+  const FaceTracker = React.lazy(() => import('./FaceTracker'));
+
+  const loadingState = renderLoadingState();
+  
   return (
-    <div>
+    <div className={className} style={style}>
       <h3>Your Avatar</h3>
-      <FaceTracker onTrackingUpdate={handleTrackingUpdate} />
-      <canvas
-        ref={canvasRef}
-        width={400}
-        height={300}
-        style={{ border: '1px solid #ccc' }}
-      />
+      
+      {/* 顔認識コンポーネント */}
+      <React.Suspense fallback={<div>Face Tracker Loading...</div>}>
+        <FaceTracker onTrackingUpdate={handleTrackingUpdate} />
+      </React.Suspense>
+      
+      {/* エラー表示 */}
+      {error && renderError()}
+      
+      {/* ローディング表示 */}
+      {!error && loadingState}
+      
+      {/* メインキャンバス */}
+      {!error && !loadingState && (
+        <canvas
+          ref={canvasRef}
+          width={width}
+          height={height}
+          style={{ 
+            border: '1px solid #ccc',
+            display: 'block',
+          }}
+          role="img"
+          aria-label="アバター表示キャンバス"
+        />
+      )}
+      
+      {/* 開発環境での状態表示 */}
+      {process.env.NODE_ENV === 'development' && imageLoadState.isComplete && (
+        <div style={{
+          position: 'relative',
+          marginTop: '8px',
+          padding: '8px',
+          backgroundColor: 'rgba(0,0,0,0.8)',
+          color: 'white',
+          borderRadius: '4px',
+          fontSize: '11px',
+        }}>
+          <div>Images: {imageLoadState.loaded}/{imageLoadState.total}</div>
+          <div>Failed: {imageLoadState.failed}</div>
+          <div>Rendering: {isRendering ? 'Yes' : 'No'}</div>
+          <div>Tracking: L:{trackingData.leftEye.toFixed(2)} R:{trackingData.rightEye.toFixed(2)} M:{trackingData.mouth.toFixed(2)}</div>
+          <div>Head: X:{trackingData.headX.toFixed(2)} Y:{trackingData.headY.toFixed(2)}</div>
+        </div>
+      )}
     </div>
   );
 };
